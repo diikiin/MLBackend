@@ -80,7 +80,7 @@ def predict_disease(request):
         if not all(field in data for field in required_fields):
             return Response({"error": "Missing required features"}, status=status.HTTP_400_BAD_REQUEST)
 
-        data['bmi'] = (data['weight'] / ((data['height'] / 100) ** 2)).round(2)
+        data['bmi'] = round(data['weight'] / ((data['height'] / 100) ** 2), 2)
         input_data = pd.DataFrame([data])
 
         scaler = MinMaxScaler(feature_range=(-1, 1))
