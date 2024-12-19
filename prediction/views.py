@@ -6,7 +6,6 @@ from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from sklearn.preprocessing import MinMaxScaler
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATBOOST_MODEL_PATH = os.path.join(BASE_DIR, "catboost_model_best.cbm")
@@ -37,18 +36,14 @@ def upload_and_predict(request):
                             status=status.HTTP_400_BAD_REQUEST)
 
         required_columns = ["height", "weight", "ap_hi", "ap_lo", "age_years", "gender",
-                           "cholesterol", "gluc", "smoke", "alco", "active"]
+                            "cholesterol", "gluc", "smoke", "alco", "active"]
         if not all(column in data.columns for column in required_columns):
             return Response({"error": "Missing required columns in the uploaded file"},
                             status=status.HTTP_400_BAD_REQUEST)
 
         data['bmi'] = (data['weight'] / ((data['height'] / 100) ** 2)).round(2)
-        scaler = MinMaxScaler(feature_range=(-1, 1))
-        scaled_data = scaler.fit_transform(data[columns_to_scale])
-        scaled_df = pd.DataFrame(scaled_data, columns=columns_to_scale)
-        all_data = pd.concat([scaled_df, data[columns_to_keep].reset_index(drop=True)], axis=1)
 
-        predictions = catboost_model.predict_proba(all_data)[:, 1] * 100
+        predictions = catboost_model.predict_proba(data)[:, 1] * 100
         data["Disease Probability (%)"] = predictions.round(2)
 
         # Return the processed file
@@ -83,18 +78,21 @@ def predict_disease(request):
         data['bmi'] = round(data['weight'] / ((data['height'] / 100) ** 2), 2)
         input_data = pd.DataFrame([data])
 
-        scaler = MinMaxScaler(feature_range=(-1, 1))
-        scaled_data = scaler.fit_transform(input_data[columns_to_scale])
-        scaled_df = pd.DataFrame(scaled_data, columns=columns_to_scale)
-        all_data = pd.concat([scaled_df, input_data[columns_to_keep].reset_index(drop=True)], axis=1)
-
         # Predict probabilities
-        probabilities = catboost_model.predict_proba(all_data)[0]
+        probabilities = catboost_model.predict_proba(input_data)[0]
         prob_disease = probabilities[1] * 100
+
+        if prob_disease < 10:
+            message = "У вас небольшая вероятность сердечно-сосудистых заболеваний."
+        elif 10 <= prob_disease <= 30:
+            message = "У вас умеренный риск сердечных заболеваний. Рекомендуется проконсультироваться с врачом."
+        else:
+            message = "Внимание! У вас высокий риск сердечно-сосудистых заболеваний! Пожалуйста, обратитесь к врачу!"
 
         return Response({
             "message": "Prediction successful",
-            "disease_probability": f"{prob_disease:.2f}%"
+            "disease_probability": f"{prob_disease:.2f}%",
+            "recommendation": message
         })
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
